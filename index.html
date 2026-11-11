@@ -1,1 +1,121 @@
-
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CROWN OF KOR — 0.2 Foundation & Cybernetics</title>
+<style>
+:root{--cyan:#54f6ff;--pink:#ff4da6;--gold:#ffd36b;--bg:#070b16}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#030611;color:#e9faff;font-family:system-ui,Segoe UI,Arial,sans-serif;overflow:hidden}
+#wrap{height:100%;display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 0%,#172044 0,#070b16 55%,#030611 100%)}
+header{height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #25445c;background:#080e1dcc;letter-spacing:.12em}
+.brand{font-weight:900;color:var(--cyan);text-shadow:0 0 14px #27d9ff}.build{font-size:11px;color:#9bb7ca}
+#gameArea{position:relative;flex:1;min-height:0;display:flex;justify-content:center;align-items:center;padding:10px}
+canvas{width:min(100%,1200px);height:auto;max-height:100%;aspect-ratio:16/9;border:1px solid #32627a;box-shadow:0 0 32px #00cfff22;background:#080e1a;image-rendering:pixelated}
+#hud{position:absolute;top:20px;left:max(20px,calc((100% - 1200px)/2 + 20px));display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.pill{background:#071321d9;border:1px solid #3c7890;padding:6px 10px;font-size:12px;box-shadow:0 0 12px #00cfff18}
+#help{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:#06101ddd;border:1px solid #31586d;padding:7px 12px;font-size:11px;color:#b9d5e2;white-space:nowrap}
+#overlay{position:absolute;inset:10px;display:flex;align-items:center;justify-content:center;background:#030714bb}
+.panel{width:min(520px,92%);padding:26px;background:linear-gradient(145deg,#101c32f5,#080d1bf5);border:1px solid #50d8f0;box-shadow:0 0 40px #00d9ff22;text-align:center}
+.panel h1{margin:0 0 4px;color:var(--cyan);letter-spacing:.12em;font-size:clamp(24px,5vw,38px)}
+.panel h2{color:var(--gold);font-size:16px;letter-spacing:.12em}
+.panel p{color:#bdd0dc;line-height:1.5;font-size:14px}
+button{cursor:pointer;border:1px solid var(--cyan);background:#0b2636;color:#eaffff;padding:10px 16px;margin:5px;font-weight:800;letter-spacing:.06em}
+button:hover{background:#12475a;box-shadow:0 0 16px #20dfff55}
+.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;margin:14px 0}
+.stat{background:#091526;border:1px solid #29465b;padding:9px;font-size:13px}
+.small{font-size:11px;color:#88a9bd}
+@media(max-width:650px){header{height:44px;padding:0 10px}.build{display:none}#help{font-size:9px;max-width:94%;white-space:normal;text-align:center}.pill{font-size:10px;padding:4px 6px}}
+</style>
+</head>
+<body>
+<div id="wrap">
+<header><div class="brand">CROWN <span style="color:#fff">OF</span> KOR</div><div class="build">VERSION 0.2 // FOUNDATION & CYBERNETICS</div></header>
+<div id="gameArea">
+<canvas id="game" width="1200" height="675" aria-label="Crown of Kor game"></canvas>
+<div id="hud">
+ <div class="pill" id="hp">HP 100 / 100</div><div class="pill" id="energy">ENERGY 60 / 60</div>
+ <div class="pill" id="level">LV 1 · XP 0/100</div><div class="pill" id="credits">¢ 120</div><div class="pill" id="kills">HOSTILES 0</div>
+</div>
+<div id="help">MOVE A/D or ←/→ · J FIRE · K MELEE · SPACE JUMP · SHIFT DASH · I IMPLANTS · E INTERACT · P PAUSE · F SAVE</div>
+<div id="overlay"><div class="panel" id="panel">
+<h1>CROWN OF KOR</h1><h2>WELCOME TO VESPER</h2>
+<p>The city remembers every debt. Make your name in the neon rain. This is the first playable foundation build.</p>
+<button id="start">ENTER VESPER</button><button id="load">LOAD SAVE</button>
+<p class="small">A/D or arrows to move · Space to jump · J to fire · K to strike</p>
+</div></div>
+</div></div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=1200,H=675,ground=555,keys={};
+let state='menu',last=0,cam=0,shots=[],enemies=[],particles=[],message='Vesper District // Neon Row',msgTime=4,spawnTimer=0;
+const baseStats={hp:100,maxHp:100,energy:60,maxEnergy:60,speed:3.5,damage:18,armor:0,crit:0,dashCd:0};
+let p={x:150,y:ground-58,w:34,h:58,vx:0,vy:0,face:1,onGround:true,stats:{...baseStats},credits:120,xp:0,level:1,kills:0,implants:[],fireCd:0,meleeCd:0,dash:0,invuln:0};
+const implantData=[
+ {id:'hermes',name:'HERMES LEGS',cost:90,desc:'Movement +1.2. Unlocks a second jump.',apply:s=>{s.speed+=1.2}},
+ {id:'mantis',name:'MANTIS ARMS',cost:110,desc:'Melee damage +22.',apply:s=>{s.damage+=22}},
+ {id:'oracle',name:'ORACLE OPTICS',cost:125,desc:'Critical chance +20%.',apply:s=>{s.crit+=.2}},
+ {id:'aegis',name:'AEGIS WEAVE',cost:100,desc:'Maximum health +40 and armor +15.',apply:s=>{s.maxHp+=40;s.hp+=40;s.armor+=15}},
+ {id:'synapse',name:'SYNAPSE SPINE',cost:115,desc:'Maximum energy +40. Faster dash recovery.',apply:s=>{s.maxEnergy+=40;s.energy+=40;s.dashCd=Math.max(0,s.dashCd-20)}}
+];
+function reset(){p={x:150,y:ground-58,w:34,h:58,vx:0,vy:0,face:1,onGround:true,stats:{...baseStats},credits:120,xp:0,level:1,kills:0,implants:[],fireCd:0,meleeCd:0,dash:0,invuln:0};shots=[];enemies=[];spawnTimer=0;for(let i=0;i<5;i++)spawnEnemy(520+i*230)}
+function say(t){message=t;msgTime=3}
+function spawnEnemy(x){enemies.push({x,y:ground-52,w:34,h:52,hp:55,max:55,vx:0,cd:0,hit:0})}
+function save(){const data={p:{...p,stats:{...p.stats}}};localStorage.setItem('crownOfKorSave',JSON.stringify(data));say('GAME SAVED TO THIS BROWSER')}
+function load(){let raw=localStorage.getItem('crownOfKorSave');if(!raw){say('NO LOCAL SAVE FOUND');return}try{let d=JSON.parse(raw);p={...p,...d.p,stats:{...baseStats,...d.p.stats}};shots=[];enemies=[];for(let i=0;i<5;i++)spawnEnemy(520+i*240);state='play';overlay(false);say('SAVE LOADED')}catch(e){say('SAVE COULD NOT BE READ')}}
+function overlay(show,html){let el=document.getElementById('overlay');el.style.display=show?'flex':'none';if(html)document.getElementById('panel').innerHTML=html}
+function start(){reset();state='play';overlay(false);say('WELCOME TO NEON ROW')}
+document.getElementById('start').onclick=start;document.getElementById('load').onclick=load;
+function jump(){if(p.onGround){p.vy=-12.8;p.onGround=false}else if(p.implants.includes('hermes')&&p.jumps<1){p.vy=-11.5;p.jumps=1}}
+function fire(){if(p.fireCd>0)return;p.fireCd=17;shots.push({x:p.x+p.w/2+p.face*22,y:p.y+25,vx:p.face*11,life:90,damage:24})}
+function melee(){if(p.meleeCd>0)return;p.meleeCd=28;for(const e of enemies){if(Math.abs((e.x+e.w/2)-(p.x+p.w/2))<72&&Math.abs(e.y-p.y)<55){let d=p.stats.damage;if(Math.random()<p.stats.crit)d*=2;e.hp-=d;e.hit=8;burst(e.x+16,e.y+20,'#ff4da6',8)}}}
+function burst(x,y,color,n){for(let i=0;i<n;i++)particles.push({x,y,vx:(Math.random()-.5)*5,vy:(Math.random()-.7)*5,life:25,color})}
+function buyMenu(){state='implant';let rows=implantData.map(a=>`<div class="stat"><b>${a.name}</b> — ¢${a.cost}<br>${a.desc}<br><span class="small">${p.implants.includes(a.id)?'INSTALLED':p.credits>=a.cost?'AVAILABLE':'INSUFFICIENT CREDITS'}</span><br><button onclick="window.buyImplant('${a.id}')">${p.implants.includes(a.id)?'INSTALLED':'INSTALL'}</button></div>`).join('');overlay(true,`<h1>CYBERNETICS</h1><h2>VESPER AUGMENTATION KIOSK</h2><p>Credits: ¢${p.credits} · Choose your hardware.</p><div class="statgrid">${rows}</div><button onclick="window.closeImplants()">RETURN TO CITY</button>`)}
+window.buyImplant=id=>{let a=implantData.find(x=>x.id===id);if(!a||p.implants.includes(id)||p.credits<a.cost)return;p.credits-=a.cost;p.implants.push(id);a.apply(p.stats);say(a.name+' INSTALLED');buyMenu()};
+window.closeImplants=()=>{state='play';overlay(false)};
+function interact(){if(Math.abs(p.x-360)<115){buyMenu()}else say('NO INTERACTIVE TERMINAL NEARBY')}
+function update(dt){if(state!=='play')return;let s=p.stats;
+p.fireCd=Math.max(0,p.fireCd-dt);p.meleeCd=Math.max(0,p.meleeCd-dt);p.invuln=Math.max(0,p.invuln-dt);s.dashCd=Math.max(0,s.dashCd-dt);p.dash=Math.max(0,p.dash-dt);
+let move=(keys.a||keys.arrowleft?-1:0)+(keys.d||keys.arrowright?1:0);if(move){p.vx=move*s.speed;p.face=move}else p.vx*=.72;
+if(keys.space||keys.w||keys.arrowup){if(!p.jumpLatch){jump();p.jumpLatch=true}}else p.jumpLatch=false;
+if(keys.j)fire();if(keys.k)melee();
+if(keys.shift&&s.dashCd<=0&&p.dash<=0){p.dash=10;s.dashCd=p.implants.includes('synapse')?48:75;p.vx=p.face*13;p.energy=Math.max(0,p.energy-8)}
+p.x+=p.vx*(p.dash>0?1.3:1);p.x=Math.max(0,Math.min(6000-p.w,p.x));p.vy+=.62;p.y+=p.vy;
+if(p.y+p.h>=ground){p.y=ground-p.h;p.vy=0;p.onGround=true;p.jumps=0}else p.onGround=false;
+for(let i=shots.length-1;i>=0;i--){let b=shots[i];b.x+=b.vx;b.life--;for(let e of enemies){if(e.hp>0&&b.x>e.x&&b.x<e.x+e.w&&b.y>e.y&&b.y<e.y+e.h){e.hp-=b.damage;b.life=0;burst(b.x,b.y,'#54f6ff',4);break}}if(b.life<=0)shots.splice(i,1)}
+for(let e of enemies){if(e.hp<=0)continue;let dx=(p.x+p.w/2)-(e.x+e.w/2);e.vx=Math.abs(dx)>40?Math.sign(dx)*1.15:0;e.x+=e.vx;e.cd=Math.max(0,e.cd-dt);if(Math.abs(dx)<42&&e.cd<=0&&p.invuln<=0){p.stats.hp=Math.max(0,p.stats.hp-Math.max(4,10-s.armor*.25));p.invuln=35;e.cd=55;burst(p.x+15,p.y+25,'#ff4d75',5)}}
+for(let i=enemies.length-1;i>=0;i--){let e=enemies[i];if(e.hp<=0){enemies.splice(i,1);p.kills++;p.xp+=35;p.credits+=18;burst(e.x,e.y,'#ff4da6',14);if(p.xp>=p.level*100){p.xp-=p.level*100;p.level++;p.stats.maxHp+=8;p.stats.hp=Math.min(p.stats.maxHp,p.stats.hp+25);say('LEVEL UP // LEVEL '+p.level)}}}
+spawnTimer-=dt;if(enemies.length<5&&spawnTimer<=0){spawnEnemy(Math.max(500,p.x+650+Math.random()*400));spawnTimer=160}
+for(let i=particles.length-1;i>=0;i--){let q=particles[i];q.x+=q.vx;q.y+=q.vy;q.vy+=.12;q.life--;if(q.life<=0)particles.splice(i,1)}
+cam=Math.max(0,Math.min(6000-W,p.x-W*.38));msgTime=Math.max(0,msgTime-dt);
+if(p.stats.hp<=0){state='dead';overlay(true,`<h1>SYSTEM FAILURE</h1><h2>YOU FELL IN VESPER</h2><p>Level ${p.level} · ${p.kills} hostiles eliminated · ¢${p.credits}</p><button onclick="window.restart()">REDEPLOY</button><button onclick="window.mainMenu()">MAIN MENU</button>`)}
+document.getElementById('hp').textContent=`HP ${Math.ceil(s.hp)} / ${s.maxHp}`;document.getElementById('energy').textContent=`ENERGY ${Math.ceil(s.energy)} / ${s.maxEnergy}`;document.getElementById('level').textContent=`LV ${p.level} · XP ${p.xp}/${p.level*100}`;document.getElementById('credits').textContent=`¢ ${p.credits}`;document.getElementById('kills').textContent=`HOSTILES ${p.kills}`;
+}
+window.restart=()=>{start()};window.mainMenu=()=>{state='menu';overlay(true,`<h1>CROWN OF KOR</h1><h2>VESPER // MAIN MENU</h2><button onclick="window.restart()">NEW RUN</button><button onclick="window.loadGame()">LOAD SAVE</button>`)};window.loadGame=load;
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function draw(){ctx.clearRect(0,0,W,H);let sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#080d20');sky.addColorStop(.7,'#17203a');sky.addColorStop(1,'#090d18');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+ // distant skyline
+ for(let i=0;i<30;i++){let x=((i*235-cam*.25)%1500+1500)%1500-100,y=180+(i*47%130),w=75+(i*31%70),h=ground-y;rect(x,y,w,h,'#101a32');rect(x+8,y+10,3,h-15,'#1b3450');for(let yy=y+20;yy<ground-20;yy+=25)for(let xx=x+15;xx<x+w-8;xx+=20)if((xx+yy+i)%3)rect(xx,yy,5,8,(i+xx)%2?'#1d7890':'#713b79')}
+ // nearer buildings
+ for(let i=0;i<18;i++){let x=i*190-cam*.55,y=245+(i*29%80),w=120+(i*13%60);rect(x,y,w,ground-y,'#0b1428');rect(x+5,y+5,w-10,4,'#286079');for(let yy=y+25;yy<ground-12;yy+=28)for(let xx=x+13;xx<x+w-10;xx+=25)rect(xx,yy,8,11,(i+yy)%2?'#1c667d':'#713b83')}
+ // terminal
+ let tx=360-cam;rect(tx,ground-105,70,105,'#15263a');rect(tx+8,ground-94,54,42,'#0b3346');rect(tx+13,ground-87,44,3,'#54f6ff');rect(tx+13,ground-76,31,3,'#54f6ff');rect(tx+20,ground-25,30,5,'#ff4da6');
+ // ground
+ rect(0,ground,W,H-ground,'#101a27');rect(0,ground,W,4,'#54f6ff');for(let x=-(cam%100);x<W;x+=100){rect(x,ground+30,55,2,'#24485a');rect(x+30,ground+60,30,2,'#203c51')}
+ // player
+ let px=p.x-cam;if(p.invuln<=0||Math.floor(performance.now()/80)%2===0){rect(px+8,p.y+17,19,39,'#172c45');rect(px+7,p.y+4,21,18,'#d4b4a0');rect(px+6,p.y+2,23,8,'#111827');rect(px+(p.face>0?20:5),p.y+23,10,5,'#54f6ff');rect(px+9,p.y+54,7,4,'#ff4da6');rect(px+21,p.y+54,7,4,'#ff4da6');if(p.implants.length){rect(px+4,p.y+28,4,13,'#54f6ff');rect(px+27,p.y+30,4,10,'#ff4da6')}}
+ for(let b of shots)rect(b.x-cam,b.y,13,4,'#54f6ff');
+ for(let e of enemies){let x=e.x-cam;if(x<-80||x>W+80)continue;rect(x+7,e.y+12,21,40,'#3b1839');rect(x+6,e.y+2,23,18,'#7c365d');rect(x+12,e.y+9,12,4,'#ff4da6');rect(x+7,e.y+52,8,4,'#111827');rect(x+20,e.y+52,8,4,'#111827');rect(x,e.y-9,36,4,'#35152b');rect(x,e.y-9,36*Math.max(0,e.hp/e.max),4,'#ff4d83')}
+ for(let q of particles)rect(q.x-cam,q.y,3,3,q.color);
+ if(msgTime>0){ctx.font='bold 17px system-ui';ctx.textAlign='center';ctx.fillStyle='#54f6ff';ctx.shadowColor='#54f6ff';ctx.shadowBlur=12;ctx.fillText(message,W/2,92);ctx.shadowBlur=0}
+ ctx.textAlign='left';ctx.font='12px system-ui';ctx.fillStyle='#8ba9bb';ctx.fillText('VESPER  /  NEON ROW',18,640);ctx.fillText('AUGMENTATION KIOSK',Math.max(8,360-cam-20),ground-115);
+}
+function loop(t){let dt=Math.min(2,(t-last)/16.67||1);last=t;update(dt);draw();requestAnimationFrame(loop)}
+window.addEventListener('keydown',e=>{let k=e.key.toLowerCase();keys[k]=true;if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k))e.preventDefault();if(k==='e'&&state==='play')interact();if(k==='i'&&state==='play')buyMenu();if(k==='f'&&state==='play')save();if(k==='p'&&state==='play'){state='pause';overlay(true,'<h1>PAUSED</h1><p>Take a breath, runner.</p><button onclick="window.resume()">RESUME</button><button onclick="window.savePause()">SAVE GAME</button>')}});
+window.resume=()=>{state='play';overlay(false)};window.savePause=()=>{save();state='pause';overlay(true,'<h1>PAUSED</h1><p>Game saved.</p><button onclick="window.resume()">RESUME</button>')};
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+requestAnimationFrame(loop);
+})();
+</script>
+</body></html>
